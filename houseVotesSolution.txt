@@ -1,0 +1,241 @@
+#Set the working directory
+
+setwd("C:/MS/Machine Learning")
+
+#Load dataset into a variable called mydata
+
+
+mydata <- read.table(file="house-votes.txt", na.strings=c("?", "NA"), sep=",", header = FALSE)
+
+str(mydata)
+
+
+#Removing null values
+
+colSums(is.na(mydata))
+
+
+library(mice)
+
+install.packages("mice")
+
+library("mice", lib.loc="~/R/win-library/3.3")
+
+md.pattern(mydata)
+
+install.packages("VIM")
+
+library("VIM", lib.loc="~/R/win-library/3.3")
+
+tempData <- mice(mydata,m=5,maxit=50,meth='pmm',seed=500)
+
+completedData <- complete(tempData,1)
+
+summary(completedData)
+
+view(completedData)
+
+
+#Implementing Decision tree
+
+install.packages("C50")
+
+library(C50)
+DTdata<-completedData
+DTdata$V1<-factor(completedData$V1)
+credit_model <- C5.0(DTdata[-1],DTdata$V1)
+
+set.seed(97)
+
+train_sample <- sample(435,335)
+
+library(gmodels)
+
+credit_train <- DTdata[train_sample,]
+credit_test <- DTdata[-train_sample,]
+credit_pred <- predict(credit_model,credit_test)
+
+CrossTable(credit_test$V1, credit_pred, prop.chisq = FALSE, prop.c = FALSE, prop.r = FALSE,dnn = c('actual default', 'predicted default'))
+
+---------------------------------------------------------------------------------------------------------------------
+# Implementing Naive Bayes
+
+library("SnowballC", lib.loc="~/R/win-library/3.3")
+
+library("tm", lib.loc="~/R/win-library/3.3")
+
+NBdata <- completedData
+
+NBdata$V1 <- factor(completedData$V1)
+
+NBdata$V1 <- factor(NBdata$V1)
+
+NBdata_train <- NBdata[1:335,]
+
+NBdata_test <- NBdata[336:435,]
+
+NBdata_train_labels <- NBdata[1:335,]$V1
+NBdata_test_labels <- NBdata[336:435,]$V1
+
+install.packages("e1071")
+
+library("e1071", lib.loc="~/R/win-library/3.3")
+
+NBdata_classifier <- naiveBayes(NBdata_train, NBdata_train_labels)
+
+NBdata_test_pred <- predict(NBdata_classifier, NBdata_test)
+
+NBdata_test_prob <- predict(NBdata_classifier, NBdata_test, type = "raw")
+
+CrossTable(NBdata_test_pred, NBdata_test_labels, prop.chisq = FALSE, prop.c = FALSE, prop.r = FALSE,dnn = c('actual default', 'predicted default'))
+
+head(NBdata_test_prob)
+
+
+#Cross-validation
+
+library("caret", lib.loc="~/R/win-library/3.3")
+
+folds <- createFolds(completedData$V1, k=10)
+
+str(folds)
+
+install.packages("irr")
+
+library("irr", lib.loc="~/R/win-library/3.3")
+
+
+mydata01_test <- completedData[folds$Fold01, ]
+
+mydata01_train <- completedData[-folds$Fold01, ]
+
+
+#Cross-validation decision tree
+
+cv_resultsDT <- lapply(folds, function(x) {
+
+mydata_train <- completedData[-x, ]
+
+mydata_test <- completedData[x, ]
+
+mydata_model <- C5.0(V1 ~ ., data = mydata_train)
+
+mydata_pred <- predict(mydata_model, mydata_test)
+
+mydata_actual <- mydata_test$V1
+
+kappa <- kappa2(data.frame(mydata_actual, mydata_pred))$value
+return(kappa)
+
+})
+str(cv_resultsDT)
+
+mean(unlist(cv_resultsDT))
+
+#Cross-validation Naive Bayes
+
+
+cv_resultsNB <- lapply(folds, function(x) 
+{
+mydata_train <- completedData[-x, ]
+
+mydata_test <- completedData[x, ]
+
+mydata_model <- naiveBayes(V1 ~ ., data = mydata_train)
+
+mydata_pred <- predict(mydata_model, mydata_test)
+
+mydata_actual <- mydata_test$V1
+
+kappa <- kappa2(data.frame(mydata_actual, mydata_pred))$value
+
+return(kappa)
+
+})
+
+str(cv_resultsNB)
+
+mean(unlist(cv_resultsNB))
+
+
+#Automated Parameter Tuning
+
+#Decision Tree
+
+set.seed(1)
+
+x <- train(V1 ~ ., data = completedData, method = "C5.0")
+
+x
+
+x$finalModel
+
+plot(x)
+
+p <- predict(x, completedData)
+
+table(p, completedData$V1)
+
+head(predict(x,completedData, type = "prob"))
+
+
+#Naive Bayes
+
+set.seed(1)
+
+y <- train(V1 ~ ., data = completedData, method = "nb")
+
+y
+
+y$finalModel
+
+plot(y)
+
+p1 <- predict(y, completedData)
+
+table(p1, completedData$V1)
+
+head(predict(y, completedData, type = "prob"))
+
+
+#Ensemble learning- Bagging
+
+install.packages("ipred")
+
+library("ipred", lib.loc="~/R/win-library/3.3")
+
+install.packages("kernlab")
+
+library("kernlab", lib.loc="~/R/win-library/3.3")
+
+#Decision tree
+
+
+str(ctreeBag)
+
+bagctrl <- bagControl(fit = ctreeBag$fit,predict = ctreeBag$pred,aggregate = ctreeBag$aggregate)
+
+set.seed(123)
+
+ctrl <-trainControl(method = "cv", number = 10)
+
+ctreebag <- train(V1 ~ ., data = completedData , trControl = ctrl, bagControl = bagctrl)
+
+ctreebag
+
+
+#Naive Bayes
+
+str(nbBag)
+
+bagctrl <- bagControl(fit = nbBag$fit,predict = nbBag$pred,aggregate = nbBag$aggregate)
+
+set.seed(1)
+
+ctrl <-trainControl(method = "cv", number = 10)
+
+nbbag <- train(V1 ~ ., data = completedData, "bag",trControl = ctrl, bagControl = bagctrl)
+
+nbbag
+
+
